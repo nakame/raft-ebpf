@@ -146,3 +146,161 @@ impl Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_timing_config_defaults() {
+        let timing = TimingConfig::default();
+        assert_eq!(timing.heartbeat_interval_ms, 50);
+        assert_eq!(timing.election_timeout_min_ms, 150);
+        assert_eq!(timing.election_timeout_max_ms, 300);
+        assert_eq!(timing.rpc_timeout_ms, 1000);
+    }
+
+    #[test]
+    fn test_ebpf_config_defaults() {
+        let ebpf = EbpfConfig::default();
+        assert!(ebpf.enabled);
+        assert_eq!(ebpf.interface, "eth0");
+    }
+
+    #[test]
+    fn test_default_for_testing() {
+        let config = Config::default_for_testing("test-node", 6000);
+        assert_eq!(config.server.node_id, "test-node");
+        assert_eq!(config.server.listen_addr, "127.0.0.1:6000");
+        assert_eq!(config.server.data_dir.to_str().unwrap(), "/tmp/raft-test-node");
+        assert_eq!(config.server.log_level, "debug");
+        assert!(!config.ebpf.enabled);
+        assert!(config.peers.is_empty());
+    }
+
+    #[test]
+    fn test_load_config_from_toml() {
+        let toml_content = r#"
+[server]
+node_id = "node-01"
+listen_addr = "0.0.0.0:5555"
+data_dir = "/var/lib/raft/node-01"
+log_level = "info"
+
+[timing]
+heartbeat_interval_ms = 100
+election_timeout_min_ms = 200
+election_timeout_max_ms = 400
+rpc_timeout_ms = 2000
+
+[ebpf]
+enabled = false
+interface = "ens192"
+
+[[peers]]
+id = "node-02"
+address = "192.168.1.2:5555"
+
+[[peers]]
+id = "node-03"
+address = "192.168.1.3:5555"
+"#;
+
+        let mut temp_file = NamedTempFile::new().expect("create temp file");
+        temp_file.write_all(toml_content.as_bytes()).expect("write config");
+        let path = temp_file.path();
+
+        let config = Config::load(path).expect("load config");
+
+        assert_eq!(config.server.node_id, "node-01");
+        assert_eq!(config.server.listen_addr, "0.0.0.0:5555");
+        assert_eq!(config.server.data_dir.to_str().unwrap(), "/var/lib/raft/node-01");
+        assert_eq!(config.server.log_level, "info");
+
+        assert_eq!(config.timing.heartbeat_interval_ms, 100);
+        assert_eq!(config.timing.election_timeout_min_ms, 200);
+        assert_eq!(config.timing.election_timeout_max_ms, 400);
+        assert_eq!(config.timing.rpc_timeout_ms, 2000);
+
+        assert!(!config.ebpf.enabled);
+        assert_eq!(config.ebpf.interface, "ens192");
+
+        assert_eq!(config.peers.len(), 2);
+        assert_eq!(config.peers[0].id, "node-02");
+        assert_eq!(config.peers[0].address, "192.168.1.2:5555");
+        assert_eq!(config.peers[1].id, "node-03");
+        assert_eq!(config.peers[1].address, "192.168.1.3:5555");
+    }
+
+    #[test]
+    fn test_load_config_with_defaults() {
+        let toml_content = r#"
+[server]
+node_id = "minimal-node"
+listen_addr = "0.0.0.0:5555"
+"#;
+
+        let mut temp_file = NamedTempFile::new().expect("create temp file");
+        temp_file.write_all(toml_content.as_bytes()).expect("write config");
+        let path = temp_file.path();
+
+        let config = Config::load(path).expect("load config");
+
+        // Check defaults are applied
+        assert_eq!(config.server.node_id, "minimal-node");
+        assert_eq!(config.server.data_dir.to_str().unwrap(), "/var/lib/raft");
+        assert_eq!(config.server.log_level, "info");
+
+        // Timing defaults
+        assert_eq!(config.timing.heartbeat_interval_ms, 50);
+        assert_eq!(config.timing.election_timeout_min_ms, 150);
+        assert_eq!(config.timing.election_timeout_max_ms, 300);
+
+        // eBPF defaults
+        assert!(config.ebpf.enabled);
+        assert_eq!(config.ebpf.interface, "eth0");
+
+        // No peers
+        assert!(config.peers.is_empty());
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = Config::default_for_testing("ser-test", 7000);
+        let toml_str = toml::to_string(&config).expect("serialize");
+        let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+
+        assert_eq!(parsed.server.node_id, "ser-test");
+        assert_eq!(parsed.server.listen_addr, "127.0.0.1:7000");
+    }
+
+    #[test]
+    fn test_peer_config() {
+        let peer = PeerConfig {
+            id: "peer-01".to_string(),
+            address: "10.0.0.1:5555".to_string(),
+        };
+        assert_eq!(peer.id, "peer-01");
+        assert_eq!(peer.address, "10.0.0.1:5555");
+    }
+
+    #[test]
+    fn test_load_nonexistent_file() {
+        let result = Config::load(std::path::Path::new("/nonexistent/path/config.toml"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_invalid_toml() {
+        let invalid_toml = "this is not valid toml {{{";
+
+        let mut temp_file = NamedTempFile::new().expect("create temp file");
+        temp_file.write_all(invalid_toml.as_bytes()).expect("write");
+        let path = temp_file.path();
+
+        let result = Config::load(path);
+        assert!(result.is_err());
+    }
+}

@@ -299,3 +299,238 @@ impl RaftLog {
             .unwrap_or(index == 0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn make_key(s: &str) -> heapless::String<256> {
+        let mut hs = heapless::String::new();
+        let _ = hs.push_str(s);
+        hs
+    }
+
+    fn make_value(data: &[u8]) -> heapless::Vec<u8, 1024> {
+        let mut hv = heapless::Vec::new();
+        for b in data {
+            let _ = hv.push(*b);
+        }
+        hv
+    }
+
+    #[test]
+    fn test_new_raft_log() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        assert_eq!(log.current_term(), 0);
+        assert_eq!(log.last_index(), 0);
+        assert_eq!(log.last_term(), 0);
+        assert!(log.voted_for().is_none());
+    }
+
+    #[test]
+    fn test_set_current_term() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let mut log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        log.set_current_term(5).expect("set term");
+        assert_eq!(log.current_term(), 5);
+
+        // Setting term should clear voted_for
+        log.set_voted_for(Some("candidate-01")).expect("vote");
+        assert!(log.voted_for().is_some());
+
+        log.set_current_term(6).expect("set term");
+        assert_eq!(log.current_term(), 6);
+        assert!(log.voted_for().is_none()); // Should be cleared
+    }
+
+    #[test]
+    fn test_voted_for() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let mut log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        assert!(log.voted_for().is_none());
+
+        log.set_voted_for(Some("node-02")).expect("vote");
+        assert_eq!(log.voted_for(), Some("node-02".to_string()));
+
+        log.set_voted_for(None).expect("clear vote");
+        assert!(log.voted_for().is_none());
+    }
+
+    #[test]
+    fn test_append_entry() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let mut log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        let index = log.append(1, Command::Noop).expect("append");
+        assert_eq!(index, 1);
+        assert_eq!(log.last_index(), 1);
+        assert_eq!(log.last_term(), 1);
+
+        let entry = log.get(1).expect("get entry");
+        assert_eq!(entry.index, 1);
+        assert_eq!(entry.term, 1);
+    }
+
+    #[test]
+    fn test_append_multiple_entries() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let mut log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        log.append(1, Command::Noop).expect("append 1");
+        log.append(1, Command::Put {
+            key: make_key("key1"),
+            value: make_value(b"value1"),
+        }).expect("append 2");
+        log.append(2, Command::Delete {
+            key: make_key("key1"),
+        }).expect("append 3");
+
+        assert_eq!(log.last_index(), 3);
+        assert_eq!(log.last_term(), 2);
+
+        assert_eq!(log.term_at(1), Some(1));
+        assert_eq!(log.term_at(2), Some(1));
+        assert_eq!(log.term_at(3), Some(2));
+    }
+
+    #[test]
+    fn test_get_entries_range() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let mut log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        for i in 1..=5 {
+            log.append(1, Command::Noop).expect("append");
+        }
+
+        let entries = log.get_entries(2, 4);
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].index, 2);
+        assert_eq!(entries[1].index, 3);
+        assert_eq!(entries[2].index, 4);
+    }
+
+    #[test]
+    fn test_has_entry() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let mut log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        log.append(1, Command::Noop).expect("append");
+        log.append(2, Command::Noop).expect("append");
+
+        assert!(log.has_entry(0, 0)); // Index 0 always matches
+        assert!(log.has_entry(1, 1)); // Correct term
+        assert!(!log.has_entry(1, 2)); // Wrong term
+        assert!(log.has_entry(2, 2)); // Correct term
+        assert!(!log.has_entry(3, 1)); // Non-existent index
+    }
+
+    #[test]
+    fn test_truncate_from() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let mut log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        for i in 1..=5 {
+            log.append(1, Command::Noop).expect("append");
+        }
+        assert_eq!(log.last_index(), 5);
+
+        log.truncate_from(3).expect("truncate");
+        assert_eq!(log.last_index(), 2);
+        assert!(log.get(1).is_some());
+        assert!(log.get(2).is_some());
+        assert!(log.get(3).is_none());
+        assert!(log.get(4).is_none());
+        assert!(log.get(5).is_none());
+    }
+
+    #[test]
+    fn test_append_entries_from_leader() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let mut log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        let entries = vec![
+            LogEntry {
+                index: 1,
+                term: 1,
+                command: Command::Noop,
+            },
+            LogEntry {
+                index: 2,
+                term: 1,
+                command: Command::Put {
+                    key: make_key("k"),
+                    value: make_value(b"v"),
+                },
+            },
+        ];
+
+        log.append_entries(entries).expect("append entries");
+        assert_eq!(log.last_index(), 2);
+        assert!(log.get(1).is_some());
+        assert!(log.get(2).is_some());
+    }
+
+    #[test]
+    fn test_persistence_across_restarts() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let data_path = temp_dir.path().to_path_buf();
+
+        // Create log, add entries, and drop it
+        {
+            let mut log = RaftLog::new(data_path.clone()).expect("create log");
+            log.set_current_term(5).expect("set term");
+            log.set_voted_for(Some("node-01")).expect("vote");
+            log.append(5, Command::Put {
+                key: make_key("persistent"),
+                value: make_value(b"data"),
+            }).expect("append");
+        }
+
+        // Reopen log and verify state persisted
+        {
+            let log = RaftLog::new(data_path).expect("reopen log");
+            assert_eq!(log.current_term(), 5);
+            assert_eq!(log.voted_for(), Some("node-01".to_string()));
+            assert_eq!(log.last_index(), 1);
+            assert_eq!(log.last_term(), 5);
+
+            let entry = log.get(1).expect("get entry");
+            if let Command::Put { key, value } = &entry.command {
+                assert_eq!(key.as_str(), "persistent");
+                assert_eq!(value.as_slice(), b"data");
+            } else {
+                panic!("Expected Put command");
+            }
+        }
+    }
+
+    #[test]
+    fn test_term_at_nonexistent_index() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        assert!(log.term_at(999).is_none());
+    }
+
+    #[test]
+    fn test_get_nonexistent_entry() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        assert!(log.get(999).is_none());
+    }
+
+    #[test]
+    fn test_empty_get_entries_range() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let log = RaftLog::new(temp_dir.path().to_path_buf()).expect("create log");
+
+        let entries = log.get_entries(1, 10);
+        assert!(entries.is_empty());
+    }
+}

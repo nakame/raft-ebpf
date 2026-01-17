@@ -24,3 +24,16 @@ pub const MAX_VALUE_SIZE: usize = 1024;
 
 /// Maximum size of a key in bytes
 pub const MAX_KEY_SIZE: usize = 256;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(RAFT_PORT, 5555);
+        assert_eq!(MAX_PEERS, 16);
+        assert_eq!(MAX_VALUE_SIZE, 1024);
+        assert_eq!(MAX_KEY_SIZE, 256);
+    }
+}

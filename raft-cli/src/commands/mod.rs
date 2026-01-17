@@ -292,3 +292,235 @@ fn chrono_lite(unix_secs: u64) -> String {
     let hours = (unix_secs / 3600) % 24;
     format!("{:02}:{:02}:{:02}", hours, mins, secs)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ipc_request_join_serialization() {
+        let request = IpcRequest::Join {
+            node_id: "node-02".to_string(),
+            address: "192.168.1.2:5555".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).expect("serialize");
+        let parsed: IpcRequest = serde_json::from_str(&json).expect("deserialize");
+
+        if let IpcRequest::Join { node_id, address } = parsed {
+            assert_eq!(node_id, "node-02");
+            assert_eq!(address, "192.168.1.2:5555");
+        } else {
+            panic!("Expected Join request");
+        }
+    }
+
+    #[test]
+    fn test_ipc_request_leave_serialization() {
+        let request = IpcRequest::Leave {
+            node_id: "node-03".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).expect("serialize");
+        let parsed: IpcRequest = serde_json::from_str(&json).expect("deserialize");
+
+        if let IpcRequest::Leave { node_id } = parsed {
+            assert_eq!(node_id, "node-03");
+        } else {
+            panic!("Expected Leave request");
+        }
+    }
+
+    #[test]
+    fn test_ipc_request_status_serialization() {
+        let request = IpcRequest::Status;
+        let json = serde_json::to_string(&request).expect("serialize");
+        let parsed: IpcRequest = serde_json::from_str(&json).expect("deserialize");
+        assert!(matches!(parsed, IpcRequest::Status));
+    }
+
+    #[test]
+    fn test_ipc_request_propose_put_serialization() {
+        let request = IpcRequest::Propose {
+            key: "mykey".to_string(),
+            value: Some("myvalue".to_string()),
+        };
+
+        let json = serde_json::to_string(&request).expect("serialize");
+        let parsed: IpcRequest = serde_json::from_str(&json).expect("deserialize");
+
+        if let IpcRequest::Propose { key, value } = parsed {
+            assert_eq!(key, "mykey");
+            assert_eq!(value, Some("myvalue".to_string()));
+        } else {
+            panic!("Expected Propose request");
+        }
+    }
+
+    #[test]
+    fn test_ipc_request_propose_delete_serialization() {
+        let request = IpcRequest::Propose {
+            key: "deletekey".to_string(),
+            value: None,
+        };
+
+        let json = serde_json::to_string(&request).expect("serialize");
+        let parsed: IpcRequest = serde_json::from_str(&json).expect("deserialize");
+
+        if let IpcRequest::Propose { key, value } = parsed {
+            assert_eq!(key, "deletekey");
+            assert!(value.is_none());
+        } else {
+            panic!("Expected Propose request");
+        }
+    }
+
+    #[test]
+    fn test_ipc_request_get_serialization() {
+        let request = IpcRequest::Get {
+            key: "lookupkey".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).expect("serialize");
+        let parsed: IpcRequest = serde_json::from_str(&json).expect("deserialize");
+
+        if let IpcRequest::Get { key } = parsed {
+            assert_eq!(key, "lookupkey");
+        } else {
+            panic!("Expected Get request");
+        }
+    }
+
+    #[test]
+    fn test_ipc_request_send_serialization() {
+        let request = IpcRequest::Send {
+            message: "Hello, RAFT cluster!".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).expect("serialize");
+        let parsed: IpcRequest = serde_json::from_str(&json).expect("deserialize");
+
+        if let IpcRequest::Send { message } = parsed {
+            assert_eq!(message, "Hello, RAFT cluster!");
+        } else {
+            panic!("Expected Send request");
+        }
+    }
+
+    #[test]
+    fn test_ipc_request_messages_serialization() {
+        let request = IpcRequest::Messages {
+            limit: Some(50),
+            since_index: Some(100),
+        };
+
+        let json = serde_json::to_string(&request).expect("serialize");
+        let parsed: IpcRequest = serde_json::from_str(&json).expect("deserialize");
+
+        if let IpcRequest::Messages { limit, since_index } = parsed {
+            assert_eq!(limit, Some(50));
+            assert_eq!(since_index, Some(100));
+        } else {
+            panic!("Expected Messages request");
+        }
+    }
+
+    #[test]
+    fn test_ipc_request_messages_no_options_serialization() {
+        let request = IpcRequest::Messages {
+            limit: None,
+            since_index: None,
+        };
+
+        let json = serde_json::to_string(&request).expect("serialize");
+        let parsed: IpcRequest = serde_json::from_str(&json).expect("deserialize");
+
+        if let IpcRequest::Messages { limit, since_index } = parsed {
+            assert!(limit.is_none());
+            assert!(since_index.is_none());
+        } else {
+            panic!("Expected Messages request");
+        }
+    }
+
+    #[test]
+    fn test_ipc_response_success_serialization() {
+        let response = IpcResponse {
+            success: true,
+            message: "Operation completed".to_string(),
+            data: Some(serde_json::json!({"index": 42})),
+        };
+
+        let json = serde_json::to_string(&response).expect("serialize");
+        let parsed: IpcResponse = serde_json::from_str(&json).expect("deserialize");
+
+        assert!(parsed.success);
+        assert_eq!(parsed.message, "Operation completed");
+        assert!(parsed.data.is_some());
+        assert_eq!(parsed.data.unwrap()["index"], 42);
+    }
+
+    #[test]
+    fn test_ipc_response_failure_serialization() {
+        let response = IpcResponse {
+            success: false,
+            message: "Not leader".to_string(),
+            data: Some(serde_json::json!({"leader_id": "node-02"})),
+        };
+
+        let json = serde_json::to_string(&response).expect("serialize");
+        let parsed: IpcResponse = serde_json::from_str(&json).expect("deserialize");
+
+        assert!(!parsed.success);
+        assert_eq!(parsed.message, "Not leader");
+        assert_eq!(parsed.data.unwrap()["leader_id"], "node-02");
+    }
+
+    #[test]
+    fn test_ipc_response_no_data_serialization() {
+        let response = IpcResponse {
+            success: true,
+            message: "OK".to_string(),
+            data: None,
+        };
+
+        let json = serde_json::to_string(&response).expect("serialize");
+        let parsed: IpcResponse = serde_json::from_str(&json).expect("deserialize");
+
+        assert!(parsed.success);
+        assert!(parsed.data.is_none());
+    }
+
+    #[test]
+    fn test_chrono_lite_midnight() {
+        let result = chrono_lite(0);
+        assert_eq!(result, "00:00:00");
+    }
+
+    #[test]
+    fn test_chrono_lite_noon() {
+        let result = chrono_lite(12 * 3600); // 12 hours in seconds
+        assert_eq!(result, "12:00:00");
+    }
+
+    #[test]
+    fn test_chrono_lite_specific_time() {
+        // 14:35:42 = 14*3600 + 35*60 + 42 = 52542 seconds
+        let result = chrono_lite(52542);
+        assert_eq!(result, "14:35:42");
+    }
+
+    #[test]
+    fn test_chrono_lite_wraps_at_24_hours() {
+        // 25 hours wraps to 01:00:00
+        let result = chrono_lite(25 * 3600);
+        assert_eq!(result, "01:00:00");
+    }
+
+    #[test]
+    fn test_chrono_lite_end_of_day() {
+        // 23:59:59
+        let result = chrono_lite(23 * 3600 + 59 * 60 + 59);
+        assert_eq!(result, "23:59:59");
+    }
+}
