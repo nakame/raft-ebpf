@@ -1,0 +1,35 @@
+[package]
+name = "raft"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+raft-common = { path = "../raft-common", features = ["user"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+clap = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+rand = { workspace = true }
+bytes = { workspace = true }
+heapless = "0.8"
+
+# eBPF support (Linux only)
+# To enable: cargo build --features ebpf (on Linux)
+[target.'cfg(target_os = "linux")'.dependencies]
+aya = { workspace = true, optional = true }
+aya-log = { workspace = true, optional = true }
+
+[features]
+default = []
+ebpf = ["dep:aya", "dep:aya-log"]
+
+[[bin]]
+name = "raft"
+path = "src/main.rs"

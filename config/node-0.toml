@@ -1,0 +1,45 @@
+# RAFT Node Configuration Example
+# Copy and modify for each node in your cluster
+
+[server]
+# Unique identifier for this node
+node_id = "node-0"
+
+# Address to listen on (ip:port)
+listen_addr = "0.0.0.0:5555"
+
+# Directory for persistent data (logs, state)
+data_dir = "/var/lib/raft/node-0"
+
+# Log level: trace, debug, info, warn, error
+log_level = "info"
+
+[timing]
+# Heartbeat interval in milliseconds (leader sends to followers)
+heartbeat_interval_ms = 50
+
+# Election timeout range in milliseconds
+# Actual timeout is randomly chosen within this range
+election_timeout_min_ms = 150
+election_timeout_max_ms = 300
+
+# RPC timeout in milliseconds
+rpc_timeout_ms = 1000
+
+[ebpf]
+# Enable eBPF packet monitoring
+enabled = true
+
+# Network interface to attach eBPF program to
+interface = "eth0"
+
+# Peer nodes in the cluster
+# Add entries for each other node
+
+[[peers]]
+id = "node-1"
+address = "192.168.1.2:5555"
+
+[[peers]]
+id = "node-2"
+address = "192.168.1.3:5555"

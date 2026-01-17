@@ -1,0 +1,18 @@
+[package]
+name = "raft-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+raft-common = { path = "../raft-common", features = ["user"] }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+[[bin]]
+name = "raft-cli"
+path = "src/main.rs"

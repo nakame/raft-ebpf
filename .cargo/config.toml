@@ -1,0 +1,19 @@
+# Cargo configuration for the RAFT project
+
+[build]
+# Default target for eBPF programs
+# Use: cargo build -p raft-ebpf --target bpfel-unknown-none
+# target = "bpfel-unknown-none"
+
+[target.bpfel-unknown-none]
+# Build eBPF programs with specific flags
+rustflags = ["-C", "link-arg=--btf"]
+
+[target.aarch64-unknown-linux-gnu]
+# Cross-compilation for ARM64
+linker = "aarch64-linux-gnu-gcc"
+
+[alias]
+# Convenient aliases
+ebpf = "build -p raft-ebpf --target bpfel-unknown-none --release"
+arm64 = "build --target aarch64-unknown-linux-gnu --release"

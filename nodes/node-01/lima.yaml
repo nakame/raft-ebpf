@@ -1,0 +1,46 @@
+# Lima VM for RAFT node-01
+images:
+  - location: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2"
+    arch: "aarch64"
+  - location: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+    arch: "x86_64"
+
+cpus: 2
+memory: "2GiB"
+disk: "10GiB"
+
+mounts:
+  - location: "~/raft"
+    writable: true
+
+ssh:
+  localPort: 0
+  loadDotSSHPubKeys: true
+
+containerd:
+  system: false
+  user: false
+
+networks:
+  - lima: shared
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      apt-get update
+      apt-get install -y build-essential pkg-config libssl-dev clang llvm libelf-dev iproute2 curl git
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if [ ! -d "$HOME/.cargo" ]; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      fi
+      mkdir -p /tmp/raft/node-01
+
+message: |
+  RAFT node-01 ready!
+  Shell: limactl shell raft-node-01

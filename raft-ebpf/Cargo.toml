@@ -1,0 +1,31 @@
+[package]
+name = "raft-ebpf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+raft-common = { path = "../raft-common", default-features = false }
+network-types = "0.0.7"
+
+[[bin]]
+name = "raft-ebpf"
+path = "src/main.rs"
+
+[profile.dev]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = "abort"
+incremental = false
+codegen-units = 1
+rpath = false
+
+[profile.release]
+lto = true
+panic = "abort"
+codegen-units = 1
